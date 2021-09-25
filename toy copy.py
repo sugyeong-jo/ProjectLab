@@ -21,12 +21,19 @@ dit = {}
 mijt = {}
 
 #%%
-df_sample = pd.read_csv('sample.csv')
-cost=df_sample[['item', 'T', 'C']].drop_duplicates()
 
+df_sample = pd.read_csv('sample.csv')
+cost = df_sample[['item', 'T', 'C']].drop_duplicates()
+
+#%%
+cost = cost.dropna().reset_index(drop=True)
+cost
+#%%
 for index,info in cost.iterrows():
-    #print(info)
     cit[info['item'], info['T']] = info['C']
+#%%
+cit
+
 #%%
 # Parameters
 for i, item in enumerate(cost.columns):
