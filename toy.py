@@ -101,3 +101,9 @@ solution.to_csv('solution.csv', index=False)
 # %%
 m.objective_value
 # %%
+
+print(solution[solution['solution']>0])
+
+# %%
+pit
+# %%
