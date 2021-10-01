@@ -2,6 +2,8 @@
 from mip import Model, xsum, minimize, BINARY, INTEGER
 
 import pandas as pd
+pd.set_option('display.max_row', 500)
+
 # sample2 엑셀 데이터 불러오기
 df_sample = pd.read_csv('sample2.csv')
 
@@ -148,7 +150,7 @@ machine_bound = {}
 for index, info in machine_bound_info.iterrows():
     item = info['JSDWG']
     machine = info['MCNO']
-    machine_bound[item, machine] = math.ceil(info['10h'])
+    machine_bound[item, machine] = info['AVG_CT']
 item_cost = {}
 for index, info in item_info.iterrows():
     item = info['중산도면']
@@ -166,9 +168,10 @@ for index, info in item_info.iterrows():
         item_urgent[item] = 0
 item_urgent
 
+#%%
+machine_bound
+#%%
 
-# %%
-mijt
 # %%
 
 
@@ -180,33 +183,84 @@ def generation_xijt():
                 if mijt[i, j, t] == 0:
                     xijt[i, j, t] = 0
                 else:
-                    xijt[i, j, t] = randint(0, mijt[i, j, t])
+                    xijt[i, j, t] = randint(0, 300)
     return xijt
 
+def generation_xijt():
+    xijt = {}
+    for i in I:
+        for j in J:
+            for t in T:
+                # if mijt[i, j, t] == 0:
+                #     xijt[i, j, t] = 0
+                # else:
+                xijt[i, j, t] = randint(0, 300)
+    return xijt
 
 def decode(mijt, xijt):
-    for i in xijt:
+    mijt = dict2bitstring(mijt,)
+    xijt = dict2bitstring(xijt)
+    for i, value in enumerate(xijt):
         ub = mijt[i]
-        if xijt[i] > ub:
+        if value > ub:
             if ub == 0:
-                xijt[i, j, t] = 0
+                xijt[i] = 0
             else:
-                xijt[i, j, t] = randint(0, mijt[i, j, t])
+                xijt[i] = randint(0,300 ) # mijt[i]
+    xijt = bitstring2dict(xijt, 'xijt')
     return xijt
 
+def decode(mijt, xijt):
+    #mijt = dict2bitstring(mijt)
+    #xijt = dict2bitstring(xijt)
+    check_list = []
+    for j in J:
+        for t in T:
+            check = sum(mijt[i, j, t]*xijt[i, j, t] for i in I) <=  600
+            if check == False:
+                for i in I:
+                    if mijt[i, j, t] == 0:
+                        xijt[i, j, t] = 0
+                    else:
+                        xijt[i, j, t] = randint(0, 300)
+                        #print(math.ceil(600/mijt[i, j, t]))
+    for i in I:
+        for j in J:
+            for t in T:
+                if xijt[i, j, t] < 0:
+                    xijt[i, j, t] = 0
+    return xijt
 
 def dict2bitstring(xijt):
     return list(xijt.values())
 
 
-def bitstring2dict(bitstring):
+def constraint_check(xijt):
+    #  Constraint 2
+    check_list = []
+    for j in J:
+        for t in T:
+            check = sum(mijt[i, j, t]*xijt[i, j, t] for i in I) <=  600
+            check_list.append(check)
+    const_2 = all(i==True for i in check_list)
+    return const_2 == True
+
+
+def bitstring2dict(bitstring, type='xijt'):
+    if type == 'xijt':
+        _keys = xijt_keys
+    elif type == 'mijt':
+        _keys = mijt_keys
+
     for idx, value in enumerate(bitstring):
-        xijt[xijt_keys[idx]] = value
+        xijt[_keys[idx]] = value
     return xijt
 
 
 def objective(xijt):
     uit = {}
+    if constraint_check(xijt) == False:
+        return 100000000
     for i in I:
         for t in T:
             u = dit[i, t] - sum(xijt[i, j, t] for j in J)
@@ -219,7 +273,7 @@ def objective(xijt):
 
 
 # tournament selection
-def selection(pop, scores, k=3):
+def selection(pop, scores, k=5):
     # first random selection
     selection_ix = randint(len(pop))
     for ix in randint(0, len(pop), k-1):
@@ -252,31 +306,14 @@ def mutation(bitstring, r_mut):
         if rand() < r_mut:
             # flip the bit
             bitstring[i] = 1 - bitstring[i]
-# %%
-xijt = generation_xijt()
-xijt_keys = list(xijt.keys())
-bitstring = dict2bitstring(xijt)
-bitstring
-xijt = bitstring2dict(bitstring)
-xijt
-# %%
 
-n_iter = 10
-# bits per variable
-n_bits = 16
-# define the population size
-n_pop = 100
-# crossover rate
-r_cross = 0.9
-# mutation rate
-r_mut = 1.0 / (float(n_bits) * len(xijt))
 
-# %%
 def genetic_algorithm(objective, bounds, n_bits, n_iter, n_pop, r_cross, r_mut):
     pop = [generation_xijt() for _ in range(n_pop)]
-    best, best_eval = 0, objective(decode(mijt, pop[0]))
+    best, best_eval = decode(mijt, pop[0]), objective(decode(mijt, pop[0]))
+    print(best_eval)
 
-    for gen in range(n_iter):    
+    for gen in range(n_iter):
         decoded = [decode(mijt, p) for p in pop]
         # evaluate all candidates in the population
         scores = [objective(d) for d in decoded]
@@ -285,6 +322,7 @@ def genetic_algorithm(objective, bounds, n_bits, n_iter, n_pop, r_cross, r_mut):
         for i in range(n_pop):
             if scores[i] < best_eval:
                 best, best_eval = pop[i], scores[i]
+                print(f'>{gen}, {scores[i]}')
 
         # select parents
         selected = [selection(pop, scores) for _ in range(n_pop)]
@@ -303,14 +341,83 @@ def genetic_algorithm(objective, bounds, n_bits, n_iter, n_pop, r_cross, r_mut):
     return [best, best_eval]
 
 # %%
+check_list = decode(mijt, best)
+for i in I:
+    for j in J:
+        for t in T:
+            value = check_list[i, j, t] - xijt_oracle[i, j, t]
+            if value > 0:
+                print(i,j, t, int(value), int(check_list[i, j, t]) , int(xijt_oracle[i, j, t]))
+#%%
+check_list = decode(mijt, xijt)
+for i in I:
+    for j in J:
+        for t in T:
+            if check_list[i, j, t] < 0:
+                print(i,j, t, value,  check_list[i, j, t])
+#%%
+i = 9
+dict2bitstring(xijt_oracle)[i]
+#%%
+list(xijt_oracle)[i]
+#%%
+xijt_oracle[list(xijt_oracle)[i]]
+#%%
+mijt[list(xijt_oracle)[i]]
+#%%
+list(xijt)[i]
+#%%
+objective(decode(mijt, xijt_oracle))
+#%%
+pop = [generation_xijt() for _ in range(n_pop)]
+objective(decode(mijt, pop[0]))
+pop[0]
+decode(mijt, pop[0])
+#%%
+mijt['K04046', 424, 1]
+
+#%%
+decode(mijt, xijt)['K04046', 424, 1]
+
+#%%
+xijt_oracle['K04046', 424, 1]
+
+#%%
+n_iter = 50
+# bits per variable
+n_bits = 16
+# define the population size
+n_pop = 100
+# crossover rate
+r_cross = 0.9
+# mutation rate
+r_mut = 1.0 / (float(n_bits) * len(xijt))
+
+xijt = generation_xijt()
+xijt_keys = list(xijt.keys())
+mijt_keys = list(mijt.keys())
+
 best, score = genetic_algorithm(objective, mijt, n_bits, n_iter, n_pop, r_cross, r_mut)
 print('Done!')
-
+#%%
+best
 # %%
+
+
+n_iter = 500
+# bits per variable
+n_bits = 16
+# define the population size
+n_pop = 500
+# crossover rate
+r_cross = 0.3
+# mutation rate
+r_mut = 1.0 / (float(n_bits) * len(xijt))
+
 pop = [generation_xijt() for _ in range(n_pop)]
 best, best_eval = 0, objective(decode(mijt, pop[0]))
 
-for gen in range(n_iter):    
+for gen in range(n_iter):
     decoded = [decode(mijt, p) for p in pop]
     # evaluate all candidates in the population
     scores = [objective(d) for d in decoded]
@@ -319,6 +426,7 @@ for gen in range(n_iter):
     for i in range(n_pop):
         if scores[i] < best_eval:
             best, best_eval = pop[i], scores[i]
+            print(f'>{gen}, {scores[i]}')
 
     # select parents
     selected = [selection(pop, scores) for _ in range(n_pop)]
@@ -334,4 +442,69 @@ for gen in range(n_iter):
             # store for next generation
             children.append(bitstring2dict(c))
     pop = children
+# %%
+best
+# %%
+solution
+# %%
+xijt_oracle = {}
+
+for index, info in solution[solution['variable'].str.contains('x_')].iterrows():
+    index_info = info['variable'][2:].split(',')
+    xijt_oracle[index_info[0], int(index_info[1]), int(index_info[2])]=info['solution']
+# %%
+objective(xijt_oracle)
+
+# %%
+m.objective_value
+
+# %%
+uit_check = {}
+
+for i in I:
+    for t in T:
+        u = dit[i, t] - sum(xijt[i, j, t] for j in J)
+        if u >= 0:
+            uit_check[i, t] = u
+        else:
+            uit_check[i, t] = 0
+
+# %%
+
+len(uit_check)
+
+uit_check
+dit['K04046', 2]
+sum(xijt_oracle['K04046', j, 2] for j in J)
+
+
+# %%
+solution[solution['variable'].str.contains('u_K04046')]
+
+#%%
+solution[solution['variable'].str.contains('x_K04046')]
+
+# %%
+uit_check['K04031', 1]
+
+# %%
+dit['K04031', 1]
+# %%
+sum(xijt_oracle['K04031', j, t] for j in J for t in T)
+
+#%%
+xijt_oracle['K04031', 1, 5] 
+# %%
+for t in T:
+    for j in J:
+        print(xijt_oracle['K04101', j, t])
+# %%
+sum(solution[solution['variable'].str.contains('x_K04101')]['solution'])
+# %%
+J
+# %%
+solution[solution['variable'].str.contains('x_K04101')]['solution']
+# %%
+
+dit
 # %%
